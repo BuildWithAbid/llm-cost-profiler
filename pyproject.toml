@@ -28,9 +28,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/techproai/llm-cost-profiler"
-Repository = "https://github.com/techproai/llm-cost-profiler"
-Issues = "https://github.com/techproai/llm-cost-profiler/issues"
+Homepage = "https://github.com/buildwithabid/llm-cost-profiler"
+Repository = "https://github.com/buildwithabid/llm-cost-profiler"
+Issues = "https://github.com/buildwithabid/llm-cost-profiler/issues"
 
 [project.optional-dependencies]
 openai = ["openai>=1.0"]
