@@ -1,5 +1,6 @@
 """Tests for the optimizer analysis engine."""
 
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from llm_cost_profiler.optimizer import (
@@ -9,6 +10,7 @@ from llm_cost_profiler.optimizer import (
     find_downgrade_candidates,
     find_retry_waste,
     run_all_optimizations,
+    _get_days_span,
 )
 from llm_cost_profiler.storage import Storage
 
@@ -17,6 +19,17 @@ def _ts(minutes_ago=0):
     return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime(
         "%Y-%m-%dT%H:%M:%S.%f"
     )
+
+
+def _prepare(calls):
+    """Build by_site dict and monthly_factor from a list of calls."""
+    days_span = _get_days_span(calls)
+    monthly_factor = 30 / max(days_span, 1)
+    by_site = defaultdict(list)
+    for call in calls:
+        site = call.get("call_site") or "unknown"
+        by_site[site].append(call)
+    return by_site, monthly_factor
 
 
 def _make_call(storage, **overrides):
@@ -56,7 +69,8 @@ class TestCacheDetection:
 
         duplicates = storage.get_duplicate_hashes()
         calls = storage.get_calls_for_optimizer()
-        findings = find_cacheable_calls(duplicates, calls)
+        _, monthly_factor = _prepare(calls)
+        findings = find_cacheable_calls(duplicates, monthly_factor)
 
         assert len(findings) >= 1
         assert findings[0]["category"] == "CACHE"
@@ -69,7 +83,8 @@ class TestCacheDetection:
 
         duplicates = storage.get_duplicate_hashes()
         calls = storage.get_calls_for_optimizer()
-        findings = find_cacheable_calls(duplicates, calls)
+        _, monthly_factor = _prepare(calls)
+        findings = find_cacheable_calls(duplicates, monthly_factor)
         assert len(findings) == 0
 
 
@@ -107,7 +122,8 @@ class TestRetryDetection:
             )
 
         calls = storage.get_calls_for_optimizer()
-        findings = find_retry_waste(calls)
+        by_site, monthly_factor = _prepare(calls)
+        findings = find_retry_waste(by_site, monthly_factor)
         # May or may not find retries depending on ordering; just ensure no crash
         assert isinstance(findings, list)
 
@@ -127,7 +143,8 @@ class TestModelDowngrade:
             )
 
         calls = storage.get_calls_for_optimizer()
-        findings = find_downgrade_candidates(calls)
+        _, monthly_factor = _prepare(calls)
+        findings = find_downgrade_candidates(calls, monthly_factor)
 
         assert len(findings) >= 1
         assert findings[0]["category"] == "MODEL DOWNGRADE"
@@ -146,7 +163,8 @@ class TestModelDowngrade:
             )
 
         calls = storage.get_calls_for_optimizer()
-        findings = find_downgrade_candidates(calls)
+        _, monthly_factor = _prepare(calls)
+        findings = find_downgrade_candidates(calls, monthly_factor)
         assert len(findings) == 0
 
 
@@ -164,7 +182,8 @@ class TestContextBloat:
             )
 
         calls = storage.get_calls_for_optimizer()
-        findings = find_context_bloat(calls)
+        by_site, monthly_factor = _prepare(calls)
+        findings = find_context_bloat(by_site, monthly_factor)
 
         assert len(findings) >= 1
         assert findings[0]["category"] == "CONTEXT BLOAT"
@@ -183,7 +202,8 @@ class TestContextBloat:
             )
 
         calls = storage.get_calls_for_optimizer()
-        findings = find_context_bloat(calls)
+        by_site, monthly_factor = _prepare(calls)
+        findings = find_context_bloat(by_site, monthly_factor)
         assert len(findings) == 0
 
 
@@ -205,7 +225,8 @@ class TestBatching:
             )
 
         calls = storage.get_calls_for_optimizer()
-        findings = find_batching_opportunities(calls)
+        by_site, monthly_factor = _prepare(calls)
+        findings = find_batching_opportunities(by_site, monthly_factor)
 
         assert len(findings) >= 1
         assert findings[0]["category"] == "BATCHING"

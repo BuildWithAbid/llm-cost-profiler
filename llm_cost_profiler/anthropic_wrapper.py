@@ -11,9 +11,6 @@ class AnthropicAdapter(ProviderAdapter):
     provider = "anthropic"
     tracked_methods = {"create"}
 
-    def extract_model(self, kwargs: dict) -> str:
-        return kwargs.get("model", "unknown")
-
     def extract_tokens(self, response: Any) -> Tuple[int, int]:
         """Extract token counts from an Anthropic response.
 

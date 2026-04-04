@@ -96,33 +96,36 @@ class Storage:
 
     # ── Write Operations ──
 
+    _INSERT_SQL = """INSERT INTO calls
+       (timestamp, provider, model, input_tokens, output_tokens,
+        cost_usd, latency_ms, success, error_type, call_site,
+        function_name, messages_hash, tags_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+
+    @staticmethod
+    def _record_to_row(r: Dict[str, Any]) -> tuple:
+        return (
+            r.get("timestamp", _utcnow()),
+            r.get("provider", "unknown"),
+            r.get("model", "unknown"),
+            r.get("input_tokens", 0),
+            r.get("output_tokens", 0),
+            r.get("cost_usd", 0.0),
+            r.get("latency_ms", 0),
+            1 if r.get("success", True) else 0,
+            r.get("error_type"),
+            r.get("call_site"),
+            r.get("function_name"),
+            r.get("messages_hash"),
+            json.dumps(r["tags"]) if r.get("tags") else None,
+        )
+
     def log_call(self, record: Dict[str, Any], messages: Optional[str] = None) -> Optional[int]:
         """Insert a call record. Returns the row id, or None on failure."""
         with self._write_lock:
             conn = self._connect()
             try:
-                cursor = conn.execute(
-                    """INSERT INTO calls
-                       (timestamp, provider, model, input_tokens, output_tokens,
-                        cost_usd, latency_ms, success, error_type, call_site,
-                        function_name, messages_hash, tags_json)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        record.get("timestamp", _utcnow()),
-                        record.get("provider", "unknown"),
-                        record.get("model", "unknown"),
-                        record.get("input_tokens", 0),
-                        record.get("output_tokens", 0),
-                        record.get("cost_usd", 0.0),
-                        record.get("latency_ms", 0),
-                        1 if record.get("success", True) else 0,
-                        record.get("error_type"),
-                        record.get("call_site"),
-                        record.get("function_name"),
-                        record.get("messages_hash"),
-                        json.dumps(record["tags"]) if record.get("tags") else None,
-                    ),
-                )
+                cursor = conn.execute(self._INSERT_SQL, self._record_to_row(record))
                 call_id = cursor.lastrowid
 
                 if messages is not None and call_id is not None:
@@ -144,32 +147,8 @@ class Storage:
         with self._write_lock:
             conn = self._connect()
             try:
-                rows = [
-                    (
-                        r.get("timestamp", _utcnow()),
-                        r.get("provider", "unknown"),
-                        r.get("model", "unknown"),
-                        r.get("input_tokens", 0),
-                        r.get("output_tokens", 0),
-                        r.get("cost_usd", 0.0),
-                        r.get("latency_ms", 0),
-                        1 if r.get("success", True) else 0,
-                        r.get("error_type"),
-                        r.get("call_site"),
-                        r.get("function_name"),
-                        r.get("messages_hash"),
-                        json.dumps(r["tags"]) if r.get("tags") else None,
-                    )
-                    for r in records
-                ]
-                conn.executemany(
-                    """INSERT INTO calls
-                       (timestamp, provider, model, input_tokens, output_tokens,
-                        cost_usd, latency_ms, success, error_type, call_site,
-                        function_name, messages_hash, tags_json)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    rows,
-                )
+                rows = [self._record_to_row(r) for r in records]
+                conn.executemany(self._INSERT_SQL, rows)
                 conn.commit()
                 return len(rows)
             except Exception:
@@ -223,14 +202,18 @@ class Storage:
             self._close(conn)
 
     def get_summary(
-        self, since: Optional[str] = None, group_by: str = "model"
+        self, since: Optional[str] = None, until: Optional[str] = None, group_by: str = "model"
     ) -> List[Dict[str, Any]]:
         """Aggregate cost data grouped by model, provider, or feature tag."""
-        since_clause = ""
+        conditions = []
         params: list = []
         if since:
-            since_clause = "WHERE timestamp >= ?"
+            conditions.append("timestamp >= ?")
             params.append(since)
+        if until:
+            conditions.append("timestamp < ?")
+            params.append(until)
+        since_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         if group_by == "feature":
             group_col = "json_extract(tags_json, '$.feature')"
@@ -263,14 +246,18 @@ class Storage:
         finally:
             self._close(conn)
 
-    def get_totals(self, since: Optional[str] = None) -> Dict[str, Any]:
+    def get_totals(self, since: Optional[str] = None, until: Optional[str] = None) -> Dict[str, Any]:
         """Get total cost, calls, and tokens for a period."""
-        since_clause = ""
+        conditions = []
         params: list = []
         if since:
-            since_clause = "WHERE timestamp >= ?"
+            conditions.append("timestamp >= ?")
             params.append(since)
+        if until:
+            conditions.append("timestamp < ?")
+            params.append(until)
 
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         query = f"""
             SELECT COUNT(*) AS calls,
                    COALESCE(SUM(input_tokens), 0) AS input_tokens,
@@ -278,7 +265,7 @@ class Storage:
                    COALESCE(SUM(cost_usd), 0.0) AS cost_usd,
                    COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
             FROM calls
-            {since_clause}
+            {where}
         """
 
         conn = self._connect()
@@ -431,12 +418,8 @@ class Storage:
             created = datetime.fromisoformat(row["created_at"]).replace(tzinfo=timezone.utc)
             if datetime.now(timezone.utc) - created > timedelta(seconds=row["ttl_seconds"]):
                 with self._write_lock:
-                    conn2 = self._connect()
-                    try:
-                        conn2.execute("DELETE FROM cache WHERE cache_key = ?", (cache_key,))
-                        conn2.commit()
-                    finally:
-                        self._close(conn2)
+                    conn.execute("DELETE FROM cache WHERE cache_key = ?", (cache_key,))
+                    conn.commit()
                 return None
 
             return json.loads(row["response"])

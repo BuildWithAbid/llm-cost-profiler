@@ -27,7 +27,6 @@ PRICING: dict[str, Tuple[float, float]] = {
     "claude-haiku-4": (0.80, 4.00),
 }
 
-# Cheaper alternatives for model downgrade suggestions
 CHEAPER_ALTERNATIVES: dict[str, str] = {
     "gpt-4o": "gpt-4o-mini",
     "gpt-4-turbo": "gpt-4o-mini",
@@ -41,12 +40,17 @@ CHEAPER_ALTERNATIVES: dict[str, str] = {
     "o3": "o3-mini",
 }
 
+# Pre-computed sorted keys for prefix matching (longest first)
+_PRICING_KEYS_SORTED = sorted(PRICING, key=len, reverse=True)
+_CHEAPER_KEYS_SORTED = sorted(CHEAPER_ALTERNATIVES, key=len, reverse=True)
+_CHEAP_MODELS = frozenset(CHEAPER_ALTERNATIVES.values())
+
 
 def _resolve_model(model: str) -> Optional[Tuple[float, float]]:
     """Exact match first, then longest prefix match."""
     if model in PRICING:
         return PRICING[model]
-    for key in sorted(PRICING, key=len, reverse=True):
+    for key in _PRICING_KEYS_SORTED:
         if model.startswith(key):
             return PRICING[key]
     return None
@@ -63,15 +67,11 @@ def get_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 
 def get_cheaper_alternative(model: str) -> Optional[str]:
     """Return a cheaper model alternative, if known."""
-    # Exact match first
     if model in CHEAPER_ALTERNATIVES:
         return CHEAPER_ALTERNATIVES[model]
-    # Don't suggest downgrade if the model is already a known cheap model
-    cheap_models = set(CHEAPER_ALTERNATIVES.values())
-    if model in PRICING and model in cheap_models:
+    if model in _CHEAP_MODELS:
         return None
-    # Prefix match (longest first)
-    for key in sorted(CHEAPER_ALTERNATIVES, key=len, reverse=True):
+    for key in _CHEAPER_KEYS_SORTED:
         if model.startswith(key):
             return CHEAPER_ALTERNATIVES[key]
     return None

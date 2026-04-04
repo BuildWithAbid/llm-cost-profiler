@@ -8,12 +8,6 @@ from typing import Any, Callable, Optional
 from llm_cost_profiler.storage import get_storage
 
 
-def _make_cache_key(model: str, messages: Any) -> str:
-    """Create a deterministic cache key from model + messages."""
-    raw = json.dumps({"model": model, "messages": messages}, sort_keys=True, default=str)
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-
 def cache(ttl: int = 3600, db_path: Optional[str] = None) -> Callable:
     """Decorator that caches LLM responses in SQLite.
 

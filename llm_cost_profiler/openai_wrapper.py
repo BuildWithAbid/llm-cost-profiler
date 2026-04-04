@@ -11,9 +11,6 @@ class OpenAIAdapter(ProviderAdapter):
     provider = "openai"
     tracked_methods = {"create"}
 
-    def extract_model(self, kwargs: dict) -> str:
-        return kwargs.get("model", "unknown")
-
     def extract_tokens(self, response: Any) -> Tuple[int, int]:
         """Extract token counts from an OpenAI response.
 
@@ -29,7 +26,3 @@ class OpenAIAdapter(ProviderAdapter):
             return input_tokens, output_tokens
         except Exception:
             return 0, 0
-
-    def serialize_messages(self, kwargs: dict) -> Optional[Any]:
-        """Serialize OpenAI messages for hashing."""
-        return kwargs.get("messages")

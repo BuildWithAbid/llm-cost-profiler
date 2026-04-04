@@ -176,7 +176,6 @@ def _generate_warnings(storage: Storage, since: str) -> List[str]:
             continue
 
         # Retry detection: same hash, within 60s, first failed
-        failed = [c for c in site_calls if not c["success"]]
         retry_cost = 0.0
         retry_count = 0
         hashes = {}
@@ -212,7 +211,7 @@ def _generate_warnings(storage: Storage, since: str) -> List[str]:
         for model in models:
             model_calls = [c for c in site_calls if c["model"] == model]
             avg_out = sum(c["output_tokens"] for c in model_calls) / len(model_calls)
-            if avg_out < 10 and model in ("gpt-4o", "gpt-4-turbo", "gpt-4", "claude-3-opus"):
+            if avg_out < 10:
                 from llm_cost_profiler.pricing import get_cheaper_alternative
                 cheaper = get_cheaper_alternative(model)
                 if cheaper:
@@ -281,35 +280,9 @@ def cmd_compare(args: argparse.Namespace) -> None:
     prev_since = prev_start.strftime("%Y-%m-%dT%H:%M:%S.%f")
     prev_until = prev_end.strftime("%Y-%m-%dT%H:%M:%S.%f")
 
-    # For previous period we need a custom query
-    prev_totals = storage.get_totals(since=prev_since)
-    # Filter prev totals to only include calls before prev_end
-    # We'll re-query manually
-    conn = storage._connect()
-    try:
-        row = conn.execute(
-            """SELECT COUNT(*) AS calls,
-                      COALESCE(SUM(input_tokens), 0) AS input_tokens,
-                      COALESCE(SUM(output_tokens), 0) AS output_tokens,
-                      COALESCE(SUM(cost_usd), 0.0) AS cost_usd
-               FROM calls WHERE timestamp >= ? AND timestamp < ?""",
-            (prev_since, prev_until),
-        ).fetchone()
-        prev_totals = dict(row) if row else {"calls": 0, "cost_usd": 0.0}
-
-        prev_features_rows = conn.execute(
-            """SELECT json_extract(tags_json, '$.feature') AS feature,
-                      COUNT(*) AS calls,
-                      SUM(cost_usd) AS cost_usd,
-                      SUM(input_tokens) AS input_tokens,
-                      SUM(output_tokens) AS output_tokens
-               FROM calls WHERE timestamp >= ? AND timestamp < ?
-               GROUP BY feature ORDER BY cost_usd DESC""",
-            (prev_since, prev_until),
-        ).fetchall()
-        prev_features = {(r["feature"] or "untagged"): dict(r) for r in prev_features_rows}
-    finally:
-        conn.close()
+    prev_totals = storage.get_totals(since=prev_since, until=prev_until)
+    prev_features_list = storage.get_summary(since=prev_since, until=prev_until, group_by="feature")
+    prev_features = {(r.get("feature") or "untagged"): r for r in prev_features_list}
 
     now_cost = now_totals["cost_usd"]
     prev_cost = prev_totals["cost_usd"]
@@ -361,7 +334,6 @@ def cmd_compare(args: argparse.Namespace) -> None:
         print()
         print(bold("  Biggest increases:"))
         for name, diff, pct, now_c, prev_c, row in increases[:5]:
-            now_calls = row["calls"]
             print(
                 f"    {name[:18].ljust(18)}: "
                 f"{c(f'+{fmt_cost(diff)}', _C.RED)} "

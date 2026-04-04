@@ -12,19 +12,19 @@ from llm_cost_profiler.storage import get_storage
 from llm_cost_profiler.tags import get_current_tags
 
 _PACKAGE_DIR = __name__.rsplit(".", 1)[0]
+_EMPTY_TAGS: dict = {}
 
 
 def _get_call_site() -> tuple[Optional[str], Optional[str]]:
-    """Walk the call stack to find the first frame outside this package."""
+    """Walk the call stack using sys._getframe() to avoid inspect.stack() overhead."""
     try:
-        for frame_info in inspect.stack():
-            module = frame_info.frame.f_globals.get("__name__", "")
+        frame = sys._getframe(2)  # skip _get_call_site + interceptor
+        while frame is not None:
+            module = frame.f_globals.get("__name__", "")
             if module and not module.startswith(_PACKAGE_DIR):
-                filename = frame_info.filename
-                lineno = frame_info.lineno
-                func_name = frame_info.frame.f_code.co_name
-                return f"{filename}:{lineno}", func_name
-    except Exception:
+                return f"{frame.f_code.co_filename}:{frame.f_lineno}", frame.f_code.co_name
+            frame = frame.f_back
+    except (ValueError, AttributeError):
         pass
     return None, None
 
@@ -40,13 +40,43 @@ def _hash_messages(messages: Any) -> Optional[str]:
         return None
 
 
-def _safe_log(record: dict, messages_str: Optional[str] = None) -> None:
-    """Log a call record to storage. Never raises."""
-    try:
-        storage = get_storage()
-        storage.log_call(record, messages=messages_str)
-    except Exception:
-        pass
+def _build_record(
+    adapter: "ProviderAdapter",
+    kwargs: dict,
+    store_prompts: bool,
+) -> tuple[dict, Optional[str]]:
+    """Build the call record and optional messages string. Shared by sync/async paths."""
+    call_site, func_name = _get_call_site()
+    model = adapter.extract_model(kwargs)
+    messages = adapter.serialize_messages(kwargs)
+    tags = get_current_tags()
+
+    record: dict[str, Any] = {
+        "provider": adapter.provider,
+        "model": model,
+        "call_site": call_site,
+        "function_name": func_name,
+        "messages_hash": _hash_messages(messages),
+        "tags": tags or None,
+        "success": True,
+    }
+
+    messages_str = None
+    if store_prompts and messages is not None:
+        try:
+            messages_str = json.dumps(messages, default=str)
+        except Exception:
+            pass
+
+    return record, messages_str
+
+
+def _finalize_record(record: dict, adapter: "ProviderAdapter", result: Any) -> None:
+    """Extract tokens and cost from a successful response."""
+    input_tokens, output_tokens = adapter.extract_tokens(result)
+    record["input_tokens"] = input_tokens
+    record["output_tokens"] = output_tokens
+    record["cost_usd"] = get_cost(record["model"], input_tokens, output_tokens)
 
 
 class ProviderAdapter:
@@ -80,15 +110,16 @@ class ClientProxy:
         object.__setattr__(self, "_client", client)
         object.__setattr__(self, "_adapter", adapter)
         object.__setattr__(self, "_store_prompts", store_prompts)
+        object.__setattr__(self, "_storage", get_storage())
 
     def __getattr__(self, name: str) -> Any:
         attr = getattr(object.__getattribute__(self, "_client"), name)
         adapter = object.__getattribute__(self, "_adapter")
         store_prompts = object.__getattribute__(self, "_store_prompts")
+        storage = object.__getattribute__(self, "_storage")
 
-        # If it's a resource object from the SDK, wrap it recursively
         if _is_resource(attr):
-            return ResourceProxy(attr, adapter, store_prompts)
+            return ResourceProxy(attr, adapter, store_prompts, storage)
         return attr
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -102,23 +133,25 @@ class ClientProxy:
 class ResourceProxy:
     """Proxy for nested SDK resource objects (e.g., client.chat.completions)."""
 
-    def __init__(self, resource: Any, adapter: ProviderAdapter, store_prompts: bool):
+    def __init__(self, resource: Any, adapter: ProviderAdapter, store_prompts: bool, storage: Any):
         object.__setattr__(self, "_resource", resource)
         object.__setattr__(self, "_adapter", adapter)
         object.__setattr__(self, "_store_prompts", store_prompts)
+        object.__setattr__(self, "_storage", storage)
 
     def __getattr__(self, name: str) -> Any:
         resource = object.__getattribute__(self, "_resource")
         adapter = object.__getattribute__(self, "_adapter")
         store_prompts = object.__getattribute__(self, "_store_prompts")
+        storage = object.__getattribute__(self, "_storage")
 
         attr = getattr(resource, name)
 
         if _is_resource(attr):
-            return ResourceProxy(attr, adapter, store_prompts)
+            return ResourceProxy(attr, adapter, store_prompts, storage)
 
         if callable(attr) and name in adapter.tracked_methods:
-            return _make_interceptor(attr, adapter, store_prompts)
+            return _make_interceptor(attr, adapter, store_prompts, storage)
 
         return attr
 
@@ -134,7 +167,6 @@ def _is_resource(obj: Any) -> bool:
     module = getattr(type(obj), "__module__", "") or ""
     if module.startswith(("openai.resources", "anthropic.resources")):
         return True
-    # Fallback: it's an object with attributes but not directly callable
     if hasattr(obj, "__class__") and not callable(obj) and hasattr(obj, "__dict__"):
         cls_module = getattr(obj.__class__, "__module__", "") or ""
         if "openai" in cls_module or "anthropic" in cls_module:
@@ -142,40 +174,24 @@ def _is_resource(obj: Any) -> bool:
     return False
 
 
-def _make_interceptor(method: Any, adapter: ProviderAdapter, store_prompts: bool):
+def _safe_log(storage: Any, record: dict, messages_str: Optional[str] = None) -> None:
+    """Log a call record to storage. Never raises."""
+    try:
+        storage.log_call(record, messages=messages_str)
+    except Exception:
+        pass
+
+
+def _make_interceptor(method: Any, adapter: ProviderAdapter, store_prompts: bool, storage: Any):
     """Create a sync or async interceptor for an SDK method."""
     if inspect.iscoroutinefunction(method):
 
         async def async_interceptor(*args: Any, **kwargs: Any) -> Any:
-            call_site, func_name = _get_call_site()
-            model = adapter.extract_model(kwargs)
-            messages = adapter.serialize_messages(kwargs)
-            messages_hash = _hash_messages(messages)
-            tags = get_current_tags()
-
+            record, messages_str = _build_record(adapter, kwargs, store_prompts)
             start = time.perf_counter()
-            record: dict[str, Any] = {
-                "provider": adapter.provider,
-                "model": model,
-                "call_site": call_site,
-                "function_name": func_name,
-                "messages_hash": messages_hash,
-                "tags": tags or None,
-                "success": True,
-            }
-            messages_str = None
-            if store_prompts and messages is not None:
-                try:
-                    messages_str = json.dumps(messages, default=str)
-                except Exception:
-                    pass
-
             try:
                 result = await method(*args, **kwargs)
-                input_tokens, output_tokens = adapter.extract_tokens(result)
-                record["input_tokens"] = input_tokens
-                record["output_tokens"] = output_tokens
-                record["cost_usd"] = get_cost(model, input_tokens, output_tokens)
+                _finalize_record(record, adapter, result)
                 return result
             except Exception as exc:
                 record["success"] = False
@@ -183,41 +199,17 @@ def _make_interceptor(method: Any, adapter: ProviderAdapter, store_prompts: bool
                 raise
             finally:
                 record["latency_ms"] = int((time.perf_counter() - start) * 1000)
-                _safe_log(record, messages_str)
+                _safe_log(storage, record, messages_str)
 
         return async_interceptor
     else:
 
         def sync_interceptor(*args: Any, **kwargs: Any) -> Any:
-            call_site, func_name = _get_call_site()
-            model = adapter.extract_model(kwargs)
-            messages = adapter.serialize_messages(kwargs)
-            messages_hash = _hash_messages(messages)
-            tags = get_current_tags()
-
+            record, messages_str = _build_record(adapter, kwargs, store_prompts)
             start = time.perf_counter()
-            record: dict[str, Any] = {
-                "provider": adapter.provider,
-                "model": model,
-                "call_site": call_site,
-                "function_name": func_name,
-                "messages_hash": messages_hash,
-                "tags": tags or None,
-                "success": True,
-            }
-            messages_str = None
-            if store_prompts and messages is not None:
-                try:
-                    messages_str = json.dumps(messages, default=str)
-                except Exception:
-                    pass
-
             try:
                 result = method(*args, **kwargs)
-                input_tokens, output_tokens = adapter.extract_tokens(result)
-                record["input_tokens"] = input_tokens
-                record["output_tokens"] = output_tokens
-                record["cost_usd"] = get_cost(model, input_tokens, output_tokens)
+                _finalize_record(record, adapter, result)
                 return result
             except Exception as exc:
                 record["success"] = False
@@ -225,7 +217,7 @@ def _make_interceptor(method: Any, adapter: ProviderAdapter, store_prompts: bool
                 raise
             finally:
                 record["latency_ms"] = int((time.perf_counter() - start) * 1000)
-                _safe_log(record, messages_str)
+                _safe_log(storage, record, messages_str)
 
         return sync_interceptor
 
@@ -247,7 +239,6 @@ def wrap(client: Any, store_prompts: bool = False) -> ClientProxy:
     Returns:
         A ClientProxy that behaves identically to the original client.
     """
-    # Detect provider at runtime — no import-time dependency
     openai_mod = sys.modules.get("openai")
     anthropic_mod = sys.modules.get("anthropic")
 

@@ -19,11 +19,20 @@ def run_all_optimizations(
     if not calls:
         return findings
 
-    findings.extend(find_cacheable_calls(duplicates, calls))
-    findings.extend(find_retry_waste(calls))
-    findings.extend(find_downgrade_candidates(calls))
-    findings.extend(find_context_bloat(calls))
-    findings.extend(find_batching_opportunities(calls))
+    days_span = _get_days_span(calls)
+    monthly_factor = 30 / max(days_span, 1)
+
+    # Group by call_site once for all analyses that need it
+    by_site: Dict[str, list] = defaultdict(list)
+    for call in calls:
+        site = call.get("call_site") or "unknown"
+        by_site[site].append(call)
+
+    findings.extend(find_cacheable_calls(duplicates, monthly_factor))
+    findings.extend(find_retry_waste(by_site, monthly_factor))
+    findings.extend(find_downgrade_candidates(calls, monthly_factor))
+    findings.extend(find_context_bloat(by_site, monthly_factor))
+    findings.extend(find_batching_opportunities(by_site, monthly_factor))
 
     # Sort by estimated monthly savings descending
     findings.sort(key=lambda f: f.get("estimated_savings_monthly", 0), reverse=True)
@@ -31,12 +40,10 @@ def run_all_optimizations(
 
 
 def find_cacheable_calls(
-    duplicates: List[Dict[str, Any]], calls: List[Dict[str, Any]]
+    duplicates: List[Dict[str, Any]], monthly_factor: float
 ) -> List[Dict[str, Any]]:
     """Detect duplicate/cacheable calls by messages_hash."""
     findings = []
-    days_span = _get_days_span(calls)
-    monthly_factor = 30 / max(days_span, 1)
 
     for dup in duplicates:
         count = dup["call_count"]
@@ -78,17 +85,9 @@ def find_cacheable_calls(
     return list(by_site.values())
 
 
-def find_retry_waste(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def find_retry_waste(by_site: Dict[str, list], monthly_factor: float) -> List[Dict[str, Any]]:
     """Detect retry patterns — same call site, similar prompt, within 60s, first failed."""
     findings = []
-    days_span = _get_days_span(calls)
-    monthly_factor = 30 / max(days_span, 1)
-
-    # Group by call_site
-    by_site: Dict[str, list] = defaultdict(list)
-    for call in calls:
-        site = call.get("call_site") or "unknown"
-        by_site[site].append(call)
 
     for site, site_calls in by_site.items():
         if len(site_calls) < 5:
@@ -151,11 +150,9 @@ def find_retry_waste(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return findings
 
 
-def find_downgrade_candidates(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def find_downgrade_candidates(calls: List[Dict[str, Any]], monthly_factor: float) -> List[Dict[str, Any]]:
     """Find call sites using expensive models for simple outputs."""
     findings = []
-    days_span = _get_days_span(calls)
-    monthly_factor = 30 / max(days_span, 1)
 
     # Group by (call_site, model)
     groups: Dict[tuple, list] = defaultdict(list)
@@ -207,21 +204,12 @@ def find_downgrade_candidates(calls: List[Dict[str, Any]]) -> List[Dict[str, Any
     return findings
 
 
-def find_context_bloat(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def find_context_bloat(by_site: Dict[str, list], monthly_factor: float) -> List[Dict[str, Any]]:
     """Find call sites with disproportionate input:output token ratios."""
     findings = []
-    days_span = _get_days_span(calls)
-    monthly_factor = 30 / max(days_span, 1)
 
-    # Group by call_site
-    groups: Dict[str, list] = defaultdict(list)
-    for call in calls:
-        if not call["success"]:
-            continue
-        site = call.get("call_site") or "unknown"
-        groups[site].append(call)
-
-    for site, group in groups.items():
+    for site, site_calls in by_site.items():
+        group = [c for c in site_calls if c["success"]]
         total = len(group)
         if total < 5:
             continue
@@ -268,19 +256,11 @@ def find_context_bloat(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return findings
 
 
-def find_batching_opportunities(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def find_batching_opportunities(by_site: Dict[str, list], monthly_factor: float) -> List[Dict[str, Any]]:
     """Detect sequential calls to the same site within short windows."""
     findings = []
-    days_span = _get_days_span(calls)
-    monthly_factor = 30 / max(days_span, 1)
 
-    # Group by call_site
-    groups: Dict[str, list] = defaultdict(list)
-    for call in calls:
-        site = call.get("call_site") or "unknown"
-        groups[site].append(call)
-
-    for site, group in groups.items():
+    for site, group in by_site.items():
         if len(group) < 10:
             continue
 
