@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Cost Profiler</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0f0f1a;
+  --surface: #1a1a2e;
+  --surface2: #222240;
+  --border: #2a2a4a;
+  --text: #e0e0ec;
+  --text-dim: #8888aa;
+  --accent: #6c5ce7;
+  --accent2: #00cec9;
+  --green: #00b894;
+  --red: #e17055;
+  --yellow: #fdcb6e;
+  --blue: #74b9ff;
+  --pink: #fd79a8;
+  --orange: #e17055;
+  --radius: 12px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* Header */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.header-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.header-controls select {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.refresh-indicator {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+}
+
+.tab {
+  padding: 12px 20px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Layout */
+.content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.card-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.card-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.card-value.cost { color: var(--green); }
+.card-value.calls { color: var(--blue); }
+.card-value.tokens { color: var(--accent); }
+.card-value.latency { color: var(--yellow); }
+
+/* Charts */
+.chart-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.chart-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.chart-box h3 {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.chart-container {
+  position: relative;
+  height: 280px;
+}
+
+/* Tables */
+.table-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.table-box h3 {
+  font-size: 14px;
+  color: var(--text-dim);
+  padding: 16px 20px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  text-align: left;
+  padding: 10px 16px;
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+th:hover { color: var(--text); }
+
+td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+tr:hover td { background: var(--surface2); }
+
+.mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+.right { text-align: right; }
+.cost-cell { color: var(--green); font-weight: 600; }
+
+/* Inline bar */
+.inline-bar {
+  display: inline-block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent);
+  vertical-align: middle;
+  margin-left: 8px;
+}
+
+/* Optimizer */
+.finding {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 12px;
+  border-left: 4px solid var(--accent);
+}
+
+.finding.high { border-left-color: var(--green); }
+.finding.medium { border-left-color: var(--yellow); }
+.finding.low { border-left-color: var(--text-dim); }
+
+.finding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.finding-category {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--accent);
+}
+
+.finding-savings {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.finding-site {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.finding-message { font-size: 14px; margin-bottom: 6px; }
+
+.finding-details {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.confidence-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+.confidence-badge.HIGH { background: #00b89433; color: var(--green); }
+.confidence-badge.MEDIUM { background: #fdcb6e33; color: var(--yellow); }
+.confidence-badge.LOW { background: #8888aa33; color: var(--text-dim); }
+
+/* Waterfall chart */
+.waterfall-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+/* Feature treemap (simple grid) */
+.treemap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 120px;
+}
+
+.treemap-item {
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  min-width: 80px;
+}
+
+.treemap-item:hover { opacity: 0.85; }
+.treemap-item .name { font-size: 13px; font-weight: 600; color: #fff; }
+.treemap-item .value { font-size: 18px; font-weight: 700; color: #fff; }
+.treemap-item .pct { font-size: 11px; color: rgba(255,255,255,0.7); }
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-dim);
+  font-size: 15px;
+}
+
+@media (max-width: 900px) {
+  .chart-row { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>LLM Cost Profiler</h1>
+  <div class="header-controls">
+    <select id="days-select">
+      <option value="1">Last 24 hours</option>
+      <option value="7" selected>Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
+    <span class="refresh-indicator" id="refresh-indicator">Auto-refresh: 30s</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="overview">Overview</div>
+  <div class="tab" data-tab="hotspots">Hotspots</div>
+  <div class="tab" data-tab="optimizer">Optimizer</div>
+</div>
+
+<div class="content">
+  <!-- Overview Tab -->
+  <div class="tab-panel active" id="panel-overview">
+    <div class="cards" id="summary-cards"></div>
+
+    <div class="chart-box" style="margin-bottom:24px">
+      <h3>Cost by Feature</h3>
+      <div class="treemap" id="treemap"></div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-box">
+        <h3>Cost Timeline</h3>
+        <div class="chart-container"><canvas id="timeline-chart"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <h3>Model Usage</h3>
+        <div class="chart-container"><canvas id="model-chart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hotspots Tab -->
+  <div class="tab-panel" id="panel-hotspots">
+    <div class="table-box">
+      <h3>Call Sites by Cost</h3>
+      <table id="hotspots-table">
+        <thead>
+          <tr>
+            <th>Call Site</th>
+            <th>Function</th>
+            <th>Model</th>
+            <th class="right">Cost</th>
+            <th class="right">Calls</th>
+            <th class="right">Avg Latency</th>
+            <th class="right">Errors</th>
+            <th>Distribution</th>
+          </tr>
+        </thead>
+        <tbody id="hotspots-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Optimizer Tab -->
+  <div class="tab-panel" id="panel-optimizer">
+    <div class="waterfall-box" id="waterfall-box">
+      <h3>Savings Waterfall</h3>
+      <div class="chart-container"><canvas id="waterfall-chart"></canvas></div>
+    </div>
+    <div id="findings-list"></div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let currentDays = 7;
+let timelineChart = null;
+let modelChart = null;
+let waterfallChart = null;
+let refreshTimer = null;
+
+const COLORS = [
+  '#6c5ce7', '#00cec9', '#00b894', '#fdcb6e', '#e17055',
+  '#74b9ff', '#fd79a8', '#a29bfe', '#55efc4', '#fab1a0',
+  '#81ecec', '#dfe6e9', '#636e72'
+];
+
+// ── API ──
+async function api(endpoint) {
+  const res = await fetch(`/api/${endpoint}?days=${currentDays}`);
+  return res.json();
+}
+
+// ── Formatting ──
+function fmtCost(n) {
+  if (n >= 1000) return '$' + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  if (n >= 1) return '$' + n.toFixed(2);
+  if (n >= 0.01) return '$' + n.toFixed(3);
+  return '$' + n.toFixed(4);
+}
+
+function fmtTokens(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return n.toString();
+}
+
+function fmtNum(n) { return n.toLocaleString(); }
+function fmtMs(n) { return Math.round(n).toLocaleString() + 'ms'; }
+
+// ── Render Summary Cards ──
+async function renderSummary() {
+  const data = await api('summary');
+  const el = document.getElementById('summary-cards');
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-label">Total Spend</div>
+      <div class="card-value cost">${fmtCost(data.total_cost)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Calls</div>
+      <div class="card-value calls">${fmtNum(data.total_calls)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Avg Cost / Call</div>
+      <div class="card-value cost">${fmtCost(data.avg_cost_per_call)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Tokens</div>
+      <div class="card-value tokens">${fmtTokens(data.total_input_tokens + data.total_output_tokens)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Avg Latency</div>
+      <div class="card-value latency">${fmtMs(data.avg_latency_ms)}</div>
+    </div>
+  `;
+}
+
+// ── Render Treemap ──
+async function renderTreemap() {
+  const data = await api('by-feature');
+  const el = document.getElementById('treemap');
+  const features = data.features || [];
+
+  if (!features.length) {
+    el.innerHTML = '<div class="empty-state">No feature-tagged calls yet. Use tag() to annotate calls.</div>';
+    return;
+  }
+
+  const totalCost = features.reduce((s, f) => s + (f.cost_usd || 0), 0);
+  el.innerHTML = '';
+
+  features.forEach((f, i) => {
+    const pct = totalCost > 0 ? (f.cost_usd / totalCost) * 100 : 0;
+    const width = Math.max(pct * 3, 80);
+    const color = COLORS[i % COLORS.length];
+    const name = f.feature || 'untagged';
+
+    const div = document.createElement('div');
+    div.className = 'treemap-item';
+    div.style.background = color;
+    div.style.flexBasis = `${width}px`;
+    div.style.flexGrow = Math.max(pct / 10, 1);
+    div.innerHTML = `
+      <span class="name">${name}</span>
+      <span class="value">${fmtCost(f.cost_usd)}</span>
+      <span class="pct">${pct.toFixed(1)}% &middot; ${fmtNum(f.calls)} calls</span>
+    `;
+    el.appendChild(div);
+  });
+}
+
+// ── Render Timeline Chart ──
+async function renderTimeline() {
+  const bucket = currentDays <= 2 ? 'hour' : 'day';
+  const res = await fetch(`/api/timeline?days=${currentDays}&bucket=${bucket}`);
+  const data = await res.json();
+  const timeline = data.timeline || [];
+
+  const labels = timeline.map(t => {
+    if (bucket === 'hour') {
+      const d = new Date(t.time_bucket);
+      return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    }
+    return t.time_bucket;
+  });
+  const costs = timeline.map(t => t.cost_usd);
+
+  const ctx = document.getElementById('timeline-chart').getContext('2d');
+  if (timelineChart) timelineChart.destroy();
+
+  timelineChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Cost ($)',
+        data: costs,
+        borderColor: '#6c5ce7',
+        backgroundColor: 'rgba(108,92,231,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: costs.length > 30 ? 0 : 3,
+        pointBackgroundColor: '#6c5ce7',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: ctx => fmtCost(ctx.raw) }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8888aa', maxTicksLimit: 12, maxRotation: 0 },
+          grid: { color: '#2a2a4a' }
+        },
+        y: {
+          ticks: { color: '#8888aa', callback: v => fmtCost(v) },
+          grid: { color: '#2a2a4a' }
+        }
+      }
+    }
+  });
+}
+
+// ── Render Model Pie Chart ──
+async function renderModelChart() {
+  const data = await api('by-model');
+  const models = data.models || [];
+
+  const labels = models.map(m => m.model);
+  const costs = models.map(m => m.cost_usd);
+
+  const ctx = document.getElementById('model-chart').getContext('2d');
+  if (modelChart) modelChart.destroy();
+
+  modelChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: costs,
+        backgroundColor: COLORS.slice(0, models.length),
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '60%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#e0e0ec', padding: 12, font: { size: 12 } }
+        },
+        tooltip: {
+          callbacks: { label: ctx => `${ctx.label}: ${fmtCost(ctx.raw)}` }
+        }
+      }
+    }
+  });
+}
+
+// ── Render Hotspots Table ──
+async function renderHotspots() {
+  const data = await api('by-callsite');
+  const hotspots = data.hotspots || [];
+  const body = document.getElementById('hotspots-body');
+
+  if (!hotspots.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty-state">No call data yet.</td></tr>';
+    return;
+  }
+
+  const maxCost = Math.max(...hotspots.map(h => h.cost_usd));
+  body.innerHTML = hotspots.map(h => {
+    const barWidth = maxCost > 0 ? (h.cost_usd / maxCost) * 100 : 0;
+    return `<tr>
+      <td class="mono">${h.call_site || '?'}</td>
+      <td>${h.function_name || '?'}</td>
+      <td>${h.model || '?'}</td>
+      <td class="right cost-cell">${fmtCost(h.cost_usd)}</td>
+      <td class="right">${fmtNum(h.calls)}</td>
+      <td class="right">${fmtMs(h.avg_latency_ms)}</td>
+      <td class="right">${h.errors || 0}</td>
+      <td><span class="inline-bar" style="width:${barWidth}%"></span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Render Optimizer ──
+async function renderOptimizer() {
+  const data = await api('optimizations');
+  const findings = data.optimizations || [];
+  const listEl = document.getElementById('findings-list');
+
+  // Summary data for waterfall
+  const summaryData = await api('summary');
+  const monthlyCost = (summaryData.total_cost / Math.max(currentDays, 1)) * 30;
+
+  if (!findings.length) {
+    listEl.innerHTML = '<div class="empty-state">No optimization opportunities found. Need more call data to analyze patterns.</div>';
+    renderWaterfall(monthlyCost, []);
+    return;
+  }
+
+  renderWaterfall(monthlyCost, findings);
+
+  listEl.innerHTML = findings.map((f, i) => {
+    const conf = (f.confidence || 'MEDIUM').toUpperCase();
+    const confClass = conf;
+    return `<div class="finding ${conf.toLowerCase()}">
+      <div class="finding-header">
+        <div>
+          <span class="finding-category">${f.category}</span>
+          <span class="confidence-badge ${confClass}">${conf}</span>
+        </div>
+        <div class="finding-savings">${f.estimated_savings_monthly > 0 ? 'SAVE ' + fmtCost(f.estimated_savings_monthly) + '/mo' : ''}</div>
+      </div>
+      <div class="finding-site">${f.call_site || ''}</div>
+      <div class="finding-message">${f.message}</div>
+      ${f.details ? `<div class="finding-details">&rarr; ${f.details}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── Waterfall Chart ──
+function renderWaterfall(monthlySpend, findings) {
+  const ctx = document.getElementById('waterfall-chart').getContext('2d');
+  if (waterfallChart) waterfallChart.destroy();
+
+  const labels = ['Current Spend'];
+  const savings = [0];
+  const running = [monthlySpend];
+  let remain = monthlySpend;
+
+  findings.slice(0, 8).forEach(f => {
+    const s = f.estimated_savings_monthly || 0;
+    labels.push(f.category);
+    savings.push(s);
+    remain -= s;
+    running.push(Math.max(remain, 0));
+  });
+
+  labels.push('Optimized');
+  savings.push(0);
+  running.push(Math.max(remain, 0));
+
+  const bgColors = running.map((_, i) => {
+    if (i === 0) return '#6c5ce7';
+    if (i === running.length - 1) return '#00b894';
+    return '#e1705588';
+  });
+
+  waterfallChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Monthly Spend',
+        data: running,
+        backgroundColor: bgColors,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => fmtCost(ctx.raw) + '/mo' } }
+      },
+      scales: {
+        x: { ticks: { color: '#8888aa', maxRotation: 45 }, grid: { display: false } },
+        y: { ticks: { color: '#8888aa', callback: v => fmtCost(v) }, grid: { color: '#2a2a4a' } }
+      }
+    }
+  });
+}
+
+// ── Tab Switching ──
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Days Selector ──
+document.getElementById('days-select').addEventListener('change', e => {
+  currentDays = parseInt(e.target.value);
+  fetchAll();
+});
+
+// ── Fetch All Data ──
+async function fetchAll() {
+  try {
+    await Promise.all([
+      renderSummary(),
+      renderTreemap(),
+      renderTimeline(),
+      renderModelChart(),
+      renderHotspots(),
+      renderOptimizer(),
+    ]);
+    document.getElementById('refresh-indicator').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    console.error('Fetch error:', e);
+  }
+}
+
+// ── Init ──
+fetchAll();
+refreshTimer = setInterval(fetchAll, 30000);
+</script>
+</body>
+</html>

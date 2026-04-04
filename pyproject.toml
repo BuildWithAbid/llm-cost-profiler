@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-spend-profiler"
+version = "0.1.0"
+description = "Track, visualize, and optimize LLM API spending. Two lines of code, zero config."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{name = "Abid Ali"}]
+keywords = ["llm", "cost", "profiler", "openai", "anthropic", "gpt", "claude", "optimization", "api", "tokens"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/techproai/llm-cost-profiler"
+Repository = "https://github.com/techproai/llm-cost-profiler"
+Issues = "https://github.com/techproai/llm-cost-profiler/issues"
+
+[project.optional-dependencies]
+openai = ["openai>=1.0"]
+anthropic = ["anthropic>=0.20"]
+dev = ["pytest", "pytest-asyncio"]
+
+[project.scripts]
+llmcost = "llm_cost_profiler.cli:main"
+
+[tool.setuptools.package-data]
+llm_cost_profiler = ["dashboard.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
