@@ -1,6 +1,15 @@
-# LLM Cost Profiler
+<p align="center">
+  <h1 align="center">LLM Cost Profiler</h1>
+  <p align="center">Find the money you're burning on LLM APIs.<br>Two lines of code. Zero config. Instant visibility.</p>
+</p>
 
-**Find the money you're burning on LLM APIs.** Two lines of code, zero config, instant visibility.
+<p align="center">
+  <a href="https://pypi.org/project/llm-spend-profiler/"><img src="https://img.shields.io/pypi/v/llm-spend-profiler?color=blue&label=PyPI" alt="PyPI"></a>
+  <a href="https://pypi.org/project/llm-spend-profiler/"><img src="https://img.shields.io/pypi/pyversions/llm-spend-profiler" alt="Python"></a>
+  <a href="https://github.com/buildwithabid/llm-cost-profiler/blob/main/LICENSE"><img src="https://img.shields.io/github/license/buildwithabid/llm-cost-profiler" alt="License"></a>
+</p>
+
+---
 
 ```
 LLM Cost Report — Last 7 Days
@@ -25,49 +34,93 @@ I ran this on my own project and found **$1,240/month in waste** — duplicate c
 
 ---
 
-## Setup — 2 lines, 30 seconds
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [CLI Commands](#cli-commands)
+- [Features](#features)
+  - [Tag Your Calls](#tag-your-calls)
+  - [Cache Responses](#cache-responses)
+  - [Store Prompts](#store-prompts-optional)
+- [How It Works](#how-it-works)
+- [API Reference](#api-reference)
+- [Uninstall](#uninstall)
+- [Requirements](#requirements)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Quick Start
+
+### Install
 
 ```bash
 pip install llm-spend-profiler
 ```
 
-```python
-from llm_cost_profiler import wrap
-from openai import OpenAI
+### Wrap your client
 
-client = wrap(OpenAI())  # that's it. everything is tracked now.
+```python
+from openai import OpenAI
+from llm_cost_profiler import wrap
+
+client = wrap(OpenAI())  # that's it — every call is tracked now
 ```
 
-Your code works exactly as before. Every API call is silently logged to a local SQLite database. If logging fails for any reason, it fails silently — your app is never affected.
+Your code works exactly as before. Every API call is silently logged to a local SQLite database. If logging ever fails, it fails silently — your app is never affected.
 
-Works with **Anthropic** too:
+### Works with Anthropic
 
 ```python
 from anthropic import Anthropic
 client = wrap(Anthropic())
 ```
 
-And **async** clients:
+### Works with async
 
 ```python
 from openai import AsyncOpenAI
 client = wrap(AsyncOpenAI())
 ```
 
----
-
-## What you get
-
-### `llmcost report` — Where your money goes
+### See where your money goes
 
 ```bash
-llmcost report           # last 7 days
+llmcost report
+```
+
+That's it. You're tracking.
+
+---
+
+## CLI Commands
+
+All commands work out of the box once you've wrapped a client and made some API calls.
+
+| Command | What it does |
+|---------|-------------|
+| `llmcost report` | Spending breakdown by feature and model |
+| `llmcost hotspots` | Top cost hotspots by code location |
+| `llmcost compare` | Period-over-period cost comparison |
+| `llmcost optimize` | Actionable savings with estimated dollar amounts |
+| `llmcost dashboard` | Local web dashboard at `http://127.0.0.1:8177` |
+
+### `llmcost report`
+
+```bash
+llmcost report           # last 7 days (default)
 llmcost report --days 30 # last 30 days
 ```
 
-Shows total spend, breakdown by feature and model, and automatic warnings about retry waste, context bloat, and overpriced model usage.
+Shows total spend, breakdown by feature and model, and automatic warnings for retry waste, context bloat, and overpriced model usage.
 
-### `llmcost hotspots` — Which lines of code cost the most
+### `llmcost hotspots`
+
+```bash
+llmcost hotspots          # top 10 (default)
+llmcost hotspots --top 20 # top 20
+```
 
 ```
 Top Cost Hotspots:
@@ -76,20 +129,30 @@ Top Cost Hotspots:
   3. pipeline/classify.py:34     classify_text()     $89.40/week   2,847 calls  ████
 ```
 
-Auto-detected from the Python call stack. No manual annotation needed.
+Auto-detected from the call stack. No manual annotation needed.
 
-### `llmcost compare` — What changed
+### `llmcost compare`
+
+```bash
+llmcost compare           # week-over-week (default)
+llmcost compare --days 30 # month-over-month
+```
 
 ```
 Week-over-Week Comparison:
   Total: $847.32 → was $623.10 (+36% ⚠)
 
   Biggest increases:
-    summarizer: +$180 (+77%) — call volume doubled
-    chatbot: +$44 (+28%) — avg tokens per call increased
+    summarizer: +$180 (+77%)
+    chatbot:    +$44  (+28%)
 ```
 
-### `llmcost optimize` — What to fix and how much you'll save
+### `llmcost optimize`
+
+```bash
+llmcost optimize            # last 30 days (default)
+llmcost optimize --days 90  # last 90 days
+```
 
 ```
 LLM Cost Optimization Report
@@ -111,33 +174,24 @@ Potential savings found: $1,240/month (43.5%)
      Output is always <10 tokens, one of 5 fixed labels
      → Switch gpt-4o to gpt-4o-mini
      Confidence: MEDIUM
-
-  #4 CONTEXT BLOAT — chatbot.py:123                   [SAVE $155/mo]
-     Avg 3,200 input tokens, growing over conversation
-     → Truncate history to last 5 messages
-     Confidence: MEDIUM
 ```
 
-Five analyses: **cache detection**, **retry waste**, **model downgrade suggestions**, **context bloat detection**, **batching opportunities**.
+Five analyses: **cache detection**, **retry waste**, **model downgrade**, **context bloat**, **batching opportunities**.
 
-### `llmcost dashboard` — Visual dashboard
+### `llmcost dashboard`
 
 ```bash
-llmcost dashboard  # opens http://127.0.0.1:8177
+llmcost dashboard           # default port 8177
+llmcost dashboard --port 9000
 ```
 
-Dark-themed local web dashboard with:
-- Cost summary cards and feature treemap
-- Spend timeline chart (daily/hourly)
-- Model usage breakdown
-- Hotspots table
-- Optimization waterfall chart
-
-Auto-refreshes every 30 seconds. Single HTML file, no npm, no build step.
+Dark-themed local web dashboard with cost cards, feature treemap, spend timeline, model breakdown, hotspots table, and optimization waterfall. Auto-refreshes every 30 seconds. Single HTML file — no npm, no build step.
 
 ---
 
-## Tag your calls
+## Features
+
+### Tag Your Calls
 
 Group costs by feature, customer, environment — whatever matters to you:
 
@@ -147,13 +201,23 @@ from llm_cost_profiler import tag
 with tag(feature="summarizer", customer="acme_corp"):
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": "Summarize this..."}]
+        messages=[{"role": "user", "content": "Summarize this document..."}]
     )
 ```
 
-Tags nest. Inner tags merge with outer tags.
+Tags nest naturally. Inner tags merge with outer tags:
 
-## Cache responses
+```python
+with tag(feature="pipeline"):
+    with tag(step="extract"):
+        # tagged as feature=pipeline, step=extract
+        client.chat.completions.create(...)
+    with tag(step="transform"):
+        # tagged as feature=pipeline, step=transform
+        client.chat.completions.create(...)
+```
+
+### Cache Responses
 
 Stop paying for duplicate calls:
 
@@ -167,11 +231,13 @@ def classify_text(text):
         messages=[{"role": "user", "content": f"Classify: {text}"}]
     )
 
-classify_text("hello")  # API call, cached
+classify_text("hello")  # API call → cached
 classify_text("hello")  # instant, free
 ```
 
-## Store prompts (optional)
+Works with both sync and async functions. Cache is stored in the same local SQLite database.
+
+### Store Prompts (optional)
 
 Enable prompt storage for deeper optimization analysis:
 
@@ -183,13 +249,95 @@ Disabled by default for privacy. When enabled, the optimizer can detect near-dup
 
 ---
 
-## How it works
+## How It Works
 
-- **Wrapper**: Transparent proxy pattern — intercepts SDK method calls without monkey-patching. Your client object behaves identically.
-- **Storage**: SQLite with WAL mode at `~/.llmcost/data.db`. Thread-safe. All data stays local.
-- **Pricing**: Built-in table for OpenAI and Anthropic models. Prefix-matching handles versioned model names automatically.
-- **Call site detection**: Walks the Python call stack to find the file and line that triggered each API call.
-- **Zero dependencies**: Only uses the Python standard library. The OpenAI/Anthropic SDKs are detected at runtime, not required at install time.
+```
+Your code                     LLM Cost Profiler                    OpenAI / Anthropic
+─────────                     ─────────────────                    ──────────────────
+client.chat.completions  →  ClientProxy → ResourceProxy chain
+          .create(...)   →  intercepts create()
+                            ├─ captures call site (sys._getframe)
+                            ├─ reads active tags (contextvars)
+                            ├─ calls real SDK method  ──────────→  API call happens
+                            ├─ extracts tokens from response
+                            ├─ looks up cost from pricing table
+                            ├─ logs to SQLite (async-safe)
+                            └─ returns original response  ←──────  response comes back
+```
+
+- **Proxy pattern** — wraps the SDK client transparently. No monkey-patching, no subclassing. Your client object behaves identically.
+- **SQLite + WAL mode** — all data stored locally at `~/.llmcost/data.db`. Thread-safe writes, concurrent reads. No external database needed.
+- **Built-in pricing** — covers OpenAI and Anthropic models. Prefix-matching handles versioned model names (e.g., `gpt-4o-2024-08-06` matches `gpt-4o`).
+- **Call site detection** — walks the Python stack via `sys._getframe()` to find the exact file and line that triggered each API call. No decorators or annotations required.
+- **Zero dependencies** — only uses the Python standard library. The OpenAI/Anthropic SDKs are detected at runtime, not required at install.
+
+---
+
+## API Reference
+
+### `wrap(client, store_prompts=False)`
+
+Wraps an OpenAI or Anthropic client. Returns a transparent proxy that tracks all API calls.
+
+```python
+from llm_cost_profiler import wrap
+
+client = wrap(OpenAI())                        # basic tracking
+client = wrap(OpenAI(), store_prompts=True)     # also store prompt content
+```
+
+### `tag(**kwargs)`
+
+Context manager that attaches metadata to all API calls within its scope.
+
+```python
+from llm_cost_profiler import tag
+
+with tag(feature="search", env="production"):
+    # all calls here are tagged
+    ...
+```
+
+### `cache(ttl=3600, db_path=None)`
+
+Decorator that caches function results in SQLite. Identical arguments return cached responses.
+
+```python
+from llm_cost_profiler import cache
+
+@cache(ttl=3600)
+def my_function(text):
+    ...
+```
+
+### `get_current_tags()`
+
+Returns the currently active tags as a dictionary. Useful for debugging.
+
+```python
+from llm_cost_profiler import get_current_tags
+
+with tag(feature="search"):
+    print(get_current_tags())  # {"feature": "search"}
+```
+
+---
+
+## Uninstall
+
+```bash
+pip uninstall llm-spend-profiler
+```
+
+To also remove stored data:
+
+```bash
+# macOS / Linux
+rm -rf ~/.llmcost
+
+# Windows
+rmdir /s /q %USERPROFILE%\.llmcost
+```
 
 ---
 
@@ -199,6 +347,25 @@ Disabled by default for privacy. When enabled, the optimizer can detect near-dup
 - No required dependencies
 - Optional: `openai` and/or `anthropic` SDKs
 
+---
+
+## Contributing
+
+Contributions are welcome. To set up the dev environment:
+
+```bash
+git clone https://github.com/buildwithabid/llm-cost-profiler.git
+cd llm-cost-profiler
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+pip install -e ".[dev]"
+pytest
+```
+
+All 50 tests should pass. If you're adding a new feature, please include tests.
+
+---
+
 ## License
 
-MIT
+MIT -- see [LICENSE](LICENSE) for details.
