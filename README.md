@@ -1,8 +1,8 @@
+<h1 align="center">LLM Cost Profiler</h1>
 <p align="center">
-  <h1 align="center">LLM Cost Profiler</h1>
-  <p align="center">Find the money you're burning on LLM APIs.<br>Two lines of code. Zero config. Instant visibility.</p>
+  Find the money you're burning on LLM APIs.<br>
+  Two lines of code. Zero config. Instant visibility.
 </p>
-
 <p align="center">
   <a href="https://pypi.org/project/llm-spend-profiler/"><img src="https://img.shields.io/pypi/v/llm-spend-profiler?color=blue&label=PyPI" alt="PyPI"></a>
   <a href="https://pypi.org/project/llm-spend-profiler/"><img src="https://img.shields.io/pypi/pyversions/llm-spend-profiler" alt="Python"></a>
