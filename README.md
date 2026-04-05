@@ -1,12 +1,13 @@
 <h1 align="center">LLM Cost Profiler</h1>
 <p align="center">
-  Find the money you're burning on LLM APIs.<br>
-  Two lines of code. Zero config. Instant visibility.
+  <strong>Track, visualize, and optimize your OpenAI and Anthropic API spending.</strong><br>
+  Two lines of Python. Zero config. Instant cost visibility.
 </p>
 <p align="center">
-  <a href="https://pypi.org/project/llm-spend-profiler/"><img src="https://img.shields.io/pypi/v/llm-spend-profiler?color=blue&label=PyPI" alt="PyPI"></a>
-  <a href="https://pypi.org/project/llm-spend-profiler/"><img src="https://img.shields.io/pypi/pyversions/llm-spend-profiler" alt="Python"></a>
-  <a href="https://github.com/buildwithabid/llm-cost-profiler/blob/main/LICENSE"><img src="https://img.shields.io/github/license/buildwithabid/llm-cost-profiler" alt="License"></a>
+  <a href="https://pypi.org/project/llm-spend-profiler/"><img src="https://img.shields.io/pypi/v/llm-spend-profiler?color=blue&label=PyPI" alt="LLM Cost Profiler on PyPI"></a>
+  <a href="https://pypi.org/project/llm-spend-profiler/"><img src="https://img.shields.io/pypi/pyversions/llm-spend-profiler" alt="Python 3.9+"></a>
+  <a href="https://github.com/buildwithabid/llm-cost-profiler/blob/main/LICENSE"><img src="https://img.shields.io/github/license/buildwithabid/llm-cost-profiler" alt="MIT License"></a>
+  <a href="https://github.com/buildwithabid/llm-cost-profiler/stargazers"><img src="https://img.shields.io/github/stars/buildwithabid/llm-cost-profiler?style=social" alt="GitHub Stars"></a>
 </p>
 
 ---
@@ -31,6 +32,22 @@ Warnings:
 ```
 
 I ran this on my own project and found **$1,240/month in waste** — duplicate calls that should be cached, an expensive model doing a job a cheap one handles fine, and retry loops burning money on failures. All fixable in an afternoon.
+
+---
+
+## Why LLM Cost Profiler?
+
+If you're building with GPT-4, GPT-4o, Claude, or any LLM API, costs add up fast — and they're invisible until the bill arrives. Most teams discover they're overspending only after it's too late.
+
+LLM Cost Profiler gives you **real-time cost tracking per feature, per model, per line of code** — without changing how you write code. It detects the five most common sources of LLM waste:
+
+- **Duplicate calls** that should be cached (often 30-60% of total spend)
+- **Retry loops** burning money on repeated failures
+- **Expensive models** doing jobs that cheaper models handle identically
+- **Context bloat** from unbounded conversation history
+- **Sequential calls** that could be batched
+
+Works with **OpenAI** (GPT-4, GPT-4o, GPT-4o-mini, o1, o3) and **Anthropic** (Claude Opus, Sonnet, Haiku). Supports sync and async clients. Zero dependencies.
 
 ---
 
@@ -369,3 +386,9 @@ All 50 tests should pass. If you're adding a new feature, please include tests.
 ## License
 
 MIT -- see [LICENSE](LICENSE) for details.
+
+---
+
+<sub>
+<b>Keywords:</b> LLM cost tracking, OpenAI cost monitoring, Anthropic API costs, GPT-4 cost optimizer, Claude API spending, LLM token usage tracker, AI API cost management, Python LLM profiler, reduce OpenAI bill, LLM spend analytics, GPT cost per feature, AI cost optimization tool, LLM API budget monitor, token cost calculator, ChatGPT cost tracker
+</sub>
