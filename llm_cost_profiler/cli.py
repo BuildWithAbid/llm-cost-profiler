@@ -85,6 +85,11 @@ def bar_chart(value: float, max_value: float, width: int = 20) -> str:
     filled = max(0, min(filled, width))
     return "\u2588" * filled
 
+def fmt_ms(ms: int) -> str:
+    if ms >= 1000:
+        return f"{ms / 1000:.1f}s"
+    return f"{ms}ms"
+
 def since_str(days: int) -> str:
     dt = datetime.now(timezone.utc) - timedelta(days=days)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
@@ -415,6 +420,77 @@ def cmd_optimize(args: argparse.Namespace) -> None:
     print()
 
 
+# ── Latency Command ──
+
+def cmd_latency(args: argparse.Namespace) -> None:
+    storage = Storage()
+    since = since_str(args.days)
+    stats = storage.get_latency_stats(since=since)
+
+    overall = stats["overall"]
+    by_model = stats["by_model"]
+    by_site = stats["by_call_site"]
+
+    print()
+    print(bold(f"LLM Latency Report — Last {args.days} Days"))
+    print(bold("=" * 40))
+
+    if overall["calls"] == 0:
+        print(dim("  No data found."))
+        print()
+        return
+
+    print(
+        f"Overall: "
+        f"p50 {c(fmt_ms(overall['p50']), _C.CYAN)} | "
+        f"p95 {c(fmt_ms(overall['p95']), _C.YELLOW)} | "
+        f"p99 {c(fmt_ms(overall['p99']), _C.RED)} | "
+        f"{fmt_number(overall['calls'])} calls"
+    )
+
+    # By Model
+    if by_model:
+        print()
+        print(bold("By Model:"))
+        for row in by_model:
+            print(
+                f"  {row['model'][:22].ljust(22)} "
+                f"p50 {fmt_ms(row['p50']).rjust(7)}   "
+                f"p95 {fmt_ms(row['p95']).rjust(7)}   "
+                f"p99 {fmt_ms(row['p99']).rjust(7)}   "
+                f"{fmt_number(row['calls']).rjust(7)} calls"
+            )
+
+    # Slowest Call Sites
+    if by_site:
+        print()
+        print(bold("Slowest Call Sites:"))
+        max_p95 = max(s["p95"] for s in by_site)
+        for i, row in enumerate(by_site, 1):
+            bar = bar_chart(row["p95"], max_p95)
+            print(
+                f"  {c(str(i) + '.', _C.BOLD)} {(row['call_site'] or '?')[:35].ljust(35)} "
+                f"p95 {fmt_ms(row['p95']).rjust(7)}   "
+                f"{fmt_number(row['calls']).rjust(7)} calls  "
+                f"{c(bar, _C.YELLOW)}"
+            )
+
+    # Warning for high p95
+    warnings = []
+    for row in by_model:
+        if row["p95"] > 3000:
+            warnings.append(
+                f"{row['model']}: p95 latency is {fmt_ms(row['p95'])} "
+                f"— consider async or streaming for user-facing calls"
+            )
+    if warnings:
+        print()
+        for w in warnings:
+            print(f"  {c(chr(9888), _C.YELLOW)} {w}")
+
+    print()
+
+
 # ── Dashboard Command ──
 
 def cmd_dashboard(args: argparse.Namespace) -> None:
@@ -458,6 +534,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     p_optimize = subparsers.add_parser("optimize", help="Analyze data and suggest optimizations")
     p_optimize.add_argument("--days", type=int, default=30, help="Number of days to analyze (default: 30)")
     p_optimize.set_defaults(func=cmd_optimize)
+
+    # latency
+    p_latency = subparsers.add_parser("latency", help="Show latency percentiles by model and call site")
+    p_latency.add_argument("--days", type=int, default=7, help="Number of days (default: 7)")
+    p_latency.set_defaults(func=cmd_latency)
 
     # dashboard
     p_dashboard = subparsers.add_parser("dashboard", help="Launch the local web dashboard")
