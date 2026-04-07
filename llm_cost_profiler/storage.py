@@ -400,6 +400,100 @@ class Storage:
         finally:
             self._close(conn)
 
+    # ── Latency Stats ──
+
+    @staticmethod
+    def _percentile(sorted_values: List[int], pct: float) -> int:
+        """Compute a percentile from a sorted list of values."""
+        import math
+        if not sorted_values:
+            return 0
+        idx = math.ceil(len(sorted_values) * pct) - 1
+        idx = max(0, min(idx, len(sorted_values) - 1))
+        return sorted_values[idx]
+
+    def get_latency_stats(
+        self, since: Optional[str] = None, until: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get latency percentiles (p50, p95, p99) overall, by model, and by call site."""
+        conditions = []
+        params: list = []
+        if since:
+            conditions.append("timestamp >= ?")
+            params.append(since)
+        if until:
+            conditions.append("timestamp < ?")
+            params.append(until)
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        conn = self._connect()
+        try:
+            # Overall
+            rows = conn.execute(
+                f"SELECT latency_ms FROM calls {where} ORDER BY latency_ms", params
+            ).fetchall()
+            all_latencies = [r["latency_ms"] for r in rows]
+
+            overall = {
+                "calls": len(all_latencies),
+                "p50": self._percentile(all_latencies, 0.50),
+                "p95": self._percentile(all_latencies, 0.95),
+                "p99": self._percentile(all_latencies, 0.99),
+            }
+
+            # By model
+            model_rows = conn.execute(
+                f"SELECT model, latency_ms FROM calls {where} ORDER BY model, latency_ms",
+                params,
+            ).fetchall()
+
+            models_data: Dict[str, List[int]] = {}
+            for r in model_rows:
+                models_data.setdefault(r["model"], []).append(r["latency_ms"])
+
+            by_model = []
+            for model, latencies in models_data.items():
+                by_model.append({
+                    "model": model,
+                    "calls": len(latencies),
+                    "p50": self._percentile(latencies, 0.50),
+                    "p95": self._percentile(latencies, 0.95),
+                    "p99": self._percentile(latencies, 0.99),
+                })
+            by_model.sort(key=lambda x: x["p95"], reverse=True)
+
+            # By call site
+            site_rows = conn.execute(
+                f"SELECT call_site, latency_ms FROM calls {where} ORDER BY call_site, latency_ms",
+                params,
+            ).fetchall()
+
+            sites_data: Dict[str, List[int]] = {}
+            for r in site_rows:
+                site = r["call_site"] or "unknown"
+                sites_data.setdefault(site, []).append(r["latency_ms"])
+
+            by_call_site = []
+            for site, latencies in sites_data.items():
+                by_call_site.append({
+                    "call_site": site,
+                    "calls": len(latencies),
+                    "p50": self._percentile(latencies, 0.50),
+                    "p95": self._percentile(latencies, 0.95),
+                    "p99": self._percentile(latencies, 0.99),
+                })
+            by_call_site.sort(key=lambda x: x["p95"], reverse=True)
+            by_call_site = by_call_site[:10]
+
+            return {
+                "overall": overall,
+                "by_model": by_model,
+                "by_call_site": by_call_site,
+            }
+        finally:
+            self._close(conn)
+
     # ── Cache Operations ──
 
     def cache_get(self, cache_key: str) -> Optional[Dict[str, Any]]:
