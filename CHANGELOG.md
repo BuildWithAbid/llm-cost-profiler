@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project uses [Semantic Versioning](https://semver.org/).
 
 ---
+## 0.2.0 - 2026-04-08
+
+### Added
+- Latency report — `llmcost latency` CLI command showing p50/p95/p99 percentiles 
+  by model and call site (contributed by @monteiro-consulting)
+- `/api/latency` endpoint for programmatic access
+- Latency tab in web dashboard with stat cards and breakdown tables
+- `get_latency_stats()` method in storage layer with percentile helper
+
+### Fixed
+- Cross-thread SQLite access for dashboard server (contributed by @monteiro-consulting)
 
 ## [0.1.1] - 2026-04-05
 
