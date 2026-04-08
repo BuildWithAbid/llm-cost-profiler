@@ -107,6 +107,10 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 findings = run_all_optimizations(storage, since=since)
                 self._json_response({"optimizations": findings})
 
+            elif route == "/api/latency":
+                stats = storage.get_latency_stats(since=since)
+                self._json_response(stats)
+
             else:
                 self.send_error(404, f"Unknown API route: {route}")
 

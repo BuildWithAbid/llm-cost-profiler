@@ -121,6 +121,7 @@ All commands work out of the box once you've wrapped a client and made some API 
 | `llmcost hotspots` | Top cost hotspots by code location |
 | `llmcost compare` | Period-over-period cost comparison |
 | `llmcost optimize` | Actionable savings with estimated dollar amounts |
+| `llmcost latency` | Latency percentiles by model and call site |
 | `llmcost dashboard` | Local web dashboard at `http://127.0.0.1:8177` |
 
 ### `llmcost report`
@@ -194,6 +195,29 @@ Potential savings found: $1,240/month (43.5%)
 ```
 
 Five analyses: **cache detection**, **retry waste**, **model downgrade**, **context bloat**, **batching opportunities**.
+
+### `llmcost latency`
+
+```bash
+llmcost latency           # last 7 days (default)
+llmcost latency --days 30 # last 30 days
+```
+
+```
+LLM Latency Report — Last 7 Days
+========================================
+Overall: p50 320ms | p95 1,240ms | p99 3,100ms | 12,847 calls
+
+By Model:
+  gpt-4o                p50  450ms   p95  1,800ms   p99  4,200ms   4,201 calls
+  gpt-4o-mini           p50  180ms   p95    520ms   p99  1,100ms   3,892 calls
+
+Slowest Call Sites:
+  1. features/summarizer.py:47   p95 3,200ms   4,201 calls  ████████████████████
+  2. api/chat.py:123             p95 1,800ms   3,892 calls  ███████████
+```
+
+Shows p50, p95, and p99 latency percentiles — overall, per model, and per call site. Warns when p95 exceeds 3 seconds.
 
 ### `llmcost dashboard`
 

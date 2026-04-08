@@ -347,6 +347,7 @@ tr:hover td { background: var(--surface2); }
   <div class="tab active" data-tab="overview">Overview</div>
   <div class="tab" data-tab="hotspots">Hotspots</div>
   <div class="tab" data-tab="optimizer">Optimizer</div>
+  <div class="tab" data-tab="latency">Latency</div>
 </div>
 
 <div class="content">
@@ -400,6 +401,43 @@ tr:hover td { background: var(--surface2); }
       <div class="chart-container"><canvas id="waterfall-chart"></canvas></div>
     </div>
     <div id="findings-list"></div>
+  </div>
+
+  <!-- Latency Tab -->
+  <div class="tab-panel" id="panel-latency">
+    <div class="cards" id="latency-cards"></div>
+
+    <div class="chart-row">
+      <div class="table-box" style="flex:1">
+        <h3>Latency by Model</h3>
+        <table id="latency-model-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th class="right">p50</th>
+              <th class="right">p95</th>
+              <th class="right">p99</th>
+              <th class="right">Calls</th>
+            </tr>
+          </thead>
+          <tbody id="latency-model-body"></tbody>
+        </table>
+      </div>
+      <div class="table-box" style="flex:1">
+        <h3>Slowest Call Sites</h3>
+        <table id="latency-site-table">
+          <thead>
+            <tr>
+              <th>Call Site</th>
+              <th class="right">p95</th>
+              <th class="right">Calls</th>
+              <th>Distribution</th>
+            </tr>
+          </thead>
+          <tbody id="latency-site-body"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -714,6 +752,66 @@ function renderWaterfall(monthlySpend, findings) {
   });
 }
 
+// ── Render Latency ──
+async function renderLatency() {
+  const data = await api('latency');
+  const overall = data.overall || {calls: 0, p50: 0, p95: 0, p99: 0};
+  const byModel = data.by_model || [];
+  const bySite = data.by_call_site || [];
+
+  // Cards
+  const cardsEl = document.getElementById('latency-cards');
+  cardsEl.innerHTML = `
+    <div class="card">
+      <div class="card-label">p50 Latency</div>
+      <div class="card-value latency">${fmtMs(overall.p50)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">p95 Latency</div>
+      <div class="card-value latency">${fmtMs(overall.p95)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">p99 Latency</div>
+      <div class="card-value latency">${fmtMs(overall.p99)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Calls</div>
+      <div class="card-value calls">${fmtNum(overall.calls)}</div>
+    </div>
+  `;
+
+  // Model table
+  const modelBody = document.getElementById('latency-model-body');
+  if (!byModel.length) {
+    modelBody.innerHTML = '<tr><td colspan="5" class="empty-state">No data yet.</td></tr>';
+  } else {
+    modelBody.innerHTML = byModel.map(m => `<tr>
+      <td>${m.model}</td>
+      <td class="right">${fmtMs(m.p50)}</td>
+      <td class="right">${fmtMs(m.p95)}</td>
+      <td class="right">${fmtMs(m.p99)}</td>
+      <td class="right">${fmtNum(m.calls)}</td>
+    </tr>`).join('');
+  }
+
+  // Site table
+  const siteBody = document.getElementById('latency-site-body');
+  if (!bySite.length) {
+    siteBody.innerHTML = '<tr><td colspan="4" class="empty-state">No data yet.</td></tr>';
+  } else {
+    const maxP95 = Math.max(...bySite.map(s => s.p95));
+    siteBody.innerHTML = bySite.map(s => {
+      const barWidth = maxP95 > 0 ? (s.p95 / maxP95) * 100 : 0;
+      return `<tr>
+        <td class="mono">${s.call_site || '?'}</td>
+        <td class="right">${fmtMs(s.p95)}</td>
+        <td class="right">${fmtNum(s.calls)}</td>
+        <td><span class="inline-bar" style="width:${barWidth}%; background:var(--yellow)"></span></td>
+      </tr>`;
+    }).join('');
+  }
+}
+
 // ── Tab Switching ──
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -740,6 +838,7 @@ async function fetchAll() {
       renderModelChart(),
       renderHotspots(),
       renderOptimizer(),
+      renderLatency(),
     ]);
     document.getElementById('refresh-indicator').textContent =
       'Updated ' + new Date().toLocaleTimeString();
