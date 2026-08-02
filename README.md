@@ -31,7 +31,7 @@ Warnings:
   ⚠ classifier: using gpt-4o but output is always <10 tokens (cheaper model works)
 ```
 
-I ran this on my own project and found **$1,240/month in waste** — duplicate calls that should be cached, an expensive model doing a job a cheap one handles fine, and retry loops burning money on failures. All fixable in an afternoon.
+The report above is **illustrative sample output**, not a bill I received. It shows the shape of what the profiler surfaces: duplicate calls that should be cached, an expensive model doing a job a cheap one handles fine, and retry loops burning money on failures. The figures in every example in this README are synthetic — run it against your own traffic to get real ones.
 
 ---
 
@@ -178,6 +178,8 @@ llmcost optimize            # last 30 days (default)
 llmcost optimize --days 90  # last 90 days
 ```
 
+*Sample output — synthetic figures.*
+
 ```
 LLM Cost Optimization Report
 ========================================
@@ -208,6 +210,8 @@ Five analyses: **cache detection**, **retry waste**, **model downgrade**, **cont
 llmcost latency           # last 7 days (default)
 llmcost latency --days 30 # last 30 days
 ```
+
+*Sample output — synthetic figures.*
 
 ```
 LLM Latency Report — Last 7 Days
