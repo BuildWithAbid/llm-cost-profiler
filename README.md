@@ -76,6 +76,12 @@ Works with **OpenAI** (GPT-4, GPT-4o, GPT-4o-mini, o1, o3) and **Anthropic** (Cl
 pip install llm-spend-profiler
 ```
 
+> **The package name is not the repository name.** This repository is
+> `llm-cost-profiler`, but it publishes as **`llm-spend-profiler`**, because
+> `llm-cost-profiler` was already registered on PyPI by an unrelated project in
+> November 2025. `pip install llm-cost-profiler` will install that other package,
+> not this one. The import path is unaffected: `import llm_cost_profiler`.
+
 ### Wrap your client
 
 ```python
